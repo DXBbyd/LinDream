@@ -1,0 +1,4 @@
+websockets
+colorama
+httpx
+requests
