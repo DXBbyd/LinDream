@@ -1,11 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import asyncio
 import websockets
 import json
 import datetime
-from colorama import init, Fore
+from colorama import init, Fore, Style
 import os
 import httpx
 import random
@@ -14,6 +11,48 @@ import random
 # 初始化 colorama
 # =========================
 init(autoreset=True)
+
+# =========================
+# 美化启动界面
+# =========================
+def print_startup_banner():
+    """打印启动横幅"""
+    banner = r"""
+    ╔══════════════════════════════════════════════════════════════════════════════╗
+    ║                             _     _                                          ║
+    ║                            | |   | |                                         ║
+    ║                            | |__ | | __ _ _ __   __ _  ___                   ║
+    ║                            | '_ \| |/ _` | '_ \ / _` |/ _ \                  ║
+    ║                            | |_) | | (_| | | | | (_| | (_) |                 ║
+    ║                            |_.__/|_|\__,_|_| |_|\__, |\___/                  ║
+    ║                                                   __/ |                      ║
+    ║                                                  |___/                       ║
+    ║                         LinDream - 多功能QQ机器人系统                        ║
+    ╚══════════════════════════════════════════════════════════════════════════════╝
+    """
+    print(Fore.CYAN + Style.BRIGHT + banner)
+    print(Fore.YELLOW + Style.BRIGHT + "    启动时间: " + now())
+    print(Fore.LIGHTYELLOW_EX + "    " + "="*60)
+
+def print_config_summary(bot_id, max_workers, loaded_plugins_count, loaded_patches_count):
+    """打印配置摘要"""
+    print(Fore.LIGHTGREEN_EX + Style.BRIGHT + "\n    [配置摘要]")
+    print(Fore.LIGHTGREEN_EX + f"    机器人QQ: {Fore.WHITE}{bot_id}")
+    print(Fore.LIGHTGREEN_EX + f"    下载线程数: {Fore.WHITE}{max_workers}")
+    print(Fore.LIGHTGREEN_EX + f"    已加载插件: {Fore.WHITE}{loaded_plugins_count} 个")
+    print(Fore.LIGHTGREEN_EX + f"    已加载补丁: {Fore.WHITE}{loaded_patches_count} 个")
+    print(Fore.LIGHTGREEN_EX + f"    自动回复规则: {Fore.WHITE}{len(auto_reply_rules)} 条")
+    print(Fore.LIGHTGREEN_EX + f"    随机回复内容: {Fore.WHITE}{len(random_replies)} 条")
+
+def print_startup_info():
+    """打印启动信息"""
+    print(Fore.LIGHTYELLOW_EX + "    " + "="*60)
+    print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "    系统信息:")
+    print(Fore.LIGHTBLUE_EX + f"    服务器地址: {Fore.WHITE}ws://0.0.0.0:2048")
+    print(Fore.LIGHTBLUE_EX + f"    当前工作目录: {Fore.WHITE}{os.getcwd()}")
+    print(Fore.LIGHTBLUE_EX + f"    Python版本: {Fore.WHITE}{'.'.join(map(str, __import__('sys').version_info[:3]))}")
+    print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "\n    [状态] 系统初始化完成，等待连接...")
+    print(Fore.LIGHTYELLOW_EX + "    " + "="*60 + "\n")
 
 # =========================
 # 工具函数
@@ -37,6 +76,9 @@ os.makedirs(PLUGIN_DIR, exist_ok=True)
 BOT_ID = None
 MAX_DOWNLOAD_WORKERS = 3
 
+# 补丁系统
+applied_patches = {}
+
 # 自动回复规则和随机回复
 auto_reply_rules = {}
 random_replies = []
@@ -46,6 +88,9 @@ user_sessions = {}  # {user_id: session_data}
 group_sessions = {}  # {group_id: session_data}
 current_persona = "default"
 
+import subprocess
+import sys
+
 # 插件系统
 loaded_plugins = []
 
@@ -54,9 +99,123 @@ message_cache = {}
 download_queue = asyncio.Queue()
 video_cleanup_tasks = []
 
+def check_and_install_plugin_dependencies():
+    """检查并安装插件依赖"""
+    log_platform_info("开始检查插件依赖...")
+    
+    # 遍历插件目录
+    if not os.path.exists(PLUGIN_DIR):
+        log_platform_info("插件目录不存在，跳过依赖检查")
+        return
+    
+    for plugin_name in os.listdir(PLUGIN_DIR):
+        plugin_path = os.path.join(PLUGIN_DIR, plugin_name)
+        if os.path.isdir(plugin_path):
+            requirements_file = os.path.join(plugin_path, "requirements.txt")
+            if os.path.exists(requirements_file):
+                log_platform_info(f"正在检查插件 {plugin_name} 的依赖...")
+                
+                # 读取requirements.txt文件
+                with open(requirements_file, 'r', encoding='utf-8') as f:
+                    requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                
+                if requirements:
+                    log_platform_info(f"插件 {plugin_name} 需要安装依赖: {', '.join(requirements)}")
+                    
+                    # 检查是否已安装依赖
+                    missing_deps = []
+                    for req in requirements:
+                        package_name = req.split('==')[0].split('>=')[0].split('<=')[0].split('>')[0].split('<')[0].split('~=')[0]
+                        try:
+                            __import__(package_name.replace('-', '_'))
+                        except ImportError:
+                            try:
+                                import importlib
+                                importlib.import_module(package_name.replace('-', '_'))
+                            except ImportError:
+                                missing_deps.append(req)
+                    
+                    if missing_deps:
+                        log_platform_info(f"插件 {plugin_name} 缺少依赖，正在安装: {', '.join(missing_deps)}")
+                        try:
+                            # 使用pip安装缺失的依赖
+                            subprocess.check_call([sys.executable, "-m", "pip", "install"] + missing_deps)
+                            log_platform_info(f"插件 {plugin_name} 依赖安装完成")
+                        except subprocess.CalledProcessError as e:
+                            log_platform_info(f"插件 {plugin_name} 依赖安装失败: {e}")
+                    else:
+                        log_platform_info(f"插件 {plugin_name} 依赖已全部安装")
+                else:
+                    log_platform_info(f"插件 {plugin_name} 无额外依赖或依赖文件为空")
+            else:
+                log_platform_info(f"插件 {plugin_name} 无 requirements.txt 文件，跳过依赖检查")
+
 # =========================
 # 插件系统
 # =========================
+def load_patches(config_data):
+    """加载所有补丁"""
+    global applied_patches
+    applied_patches = {}
+    
+    patches_dir = "patches"
+    if not os.path.exists(patches_dir):
+        log_platform_info("补丁目录不存在，跳过补丁加载")
+        return
+    
+    # 自动扫描补丁目录下的所有子目录作为补丁
+    all_items = os.listdir(patches_dir)
+    patch_dirs = [item for item in all_items if os.path.isdir(os.path.join(patches_dir, item))]
+    
+    if not patch_dirs:
+        log_platform_info("补丁目录中没有补丁，跳过补丁加载")
+        return
+    
+    # 使用蓝色显示补丁系统加载信息
+    blue_msg = f"[补丁系统] 正在加载补丁: {', '.join(patch_dirs)}"
+    print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + blue_msg)
+    write_log(blue_msg)
+    
+    try:
+        for patch_name in patch_dirs:
+            patch_path = os.path.join(patches_dir, patch_name)
+            if os.path.isdir(patch_path):
+                main_file = os.path.join(patch_path, "main.py")
+                if os.path.exists(main_file):
+                    try:
+                        # 动态导入补丁
+                        import importlib.util
+                        spec = importlib.util.spec_from_file_location(f"patch_{patch_name}", main_file)
+                        patch_module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(patch_module)
+                        
+                        # 检查补丁是否有必要的函数
+                        if hasattr(patch_module, 'patch_apply'):
+                            # 执行补丁应用函数
+                            if hasattr(patch_module, 'patch_apply'):
+                                patch_module.patch_apply()
+                                
+                            applied_patches[patch_name] = {
+                                'name': patch_name,
+                                'module': patch_module,
+                                'path': patch_path
+                            }
+                            
+                            # 使用紫色显示补丁加载完成信息，与别的消息格式相同
+                            purple_msg = f"[补丁系统] 补丁加载完成: {patch_name}"
+                            print(Fore.MAGENTA + Style.BRIGHT + "  ▶ " + purple_msg)
+                            write_log(purple_msg)
+                        else:
+                            log_platform_info(f"补丁 {patch_name} 缺少patch_apply函数，跳过加载")
+                    except Exception as e:
+                        log_platform_info(f"加载补丁 {patch_name} 失败: {e}")
+                else:
+                    log_platform_info(f"补丁 {patch_name} 缺少main.py文件，跳过加载")
+            else:
+                log_platform_info(f"补丁 {patch_name} 目录不存在，跳过加载")
+    except Exception as e:
+        log_platform_info(f"扫描补丁目录失败: {e}")
+
 def load_plugins():
     """加载所有插件"""
     global loaded_plugins
@@ -270,12 +429,12 @@ def format_message(msg):
 # =========================
 def log_system_event(data):
     text = f"[系统消息] {now()} | {data.get('meta_event_type')} ({data.get('sub_type','')})"
-    print(Fore.LIGHTGREEN_EX + text)
+    print(Fore.LIGHTGREEN_EX + Style.BRIGHT + "  ▶ " + text)
     write_log(text)
 
 def log_platform_info(text):
     msg = f"[平台信息] {now()} | {text}"
-    print(Fore.LIGHTYELLOW_EX + msg)
+    print(Fore.LIGHTYELLOW_EX + Style.BRIGHT + "  ▶ " + msg)
     write_log(msg)
 
 def log_communication(data, media_files=None, is_bot_message=False):
@@ -296,7 +455,7 @@ def log_communication(data, media_files=None, is_bot_message=False):
         msg = f"[通信信息] {t} | 群:{group_name}({group_id}) | 来自:{user_name}({user_id}) | 内容:{msg_text}{media_str}"
     else:
         msg = f"[通信信息] {t} | 私聊来自:{user_name}({user_id}) | 内容:{msg_text}{media_str}"
-    print(Fore.LIGHTCYAN_EX + msg)
+    print(Fore.LIGHTCYAN_EX + Style.BRIGHT + "  ▶ " + msg)
     write_log(msg)  # 日志也写入下载文件信息
 
 def log_recall(data):
@@ -306,8 +465,33 @@ def log_recall(data):
         text = format_message(cached.get("message"))
     else:
         text = "[无法获取内容]"
-    msg = f"[反撤回] 群:{data.get('group_id')} | 用户:{data.get('user_id')} | 操作者:{data.get('operator_id')} | 内容:{text}"
-    print(Fore.LIGHTRED_EX + msg)
+    
+    group_id = data.get("group_id")
+    user_id = data.get("user_id")
+    operator_id = data.get("operator_id")
+    
+    # 获取群名称
+    group_name = data.get("group_name", f"群:{group_id}")
+    if not group_name or group_name == f"群:{group_id}":
+        group_name = f"群:{group_id}"
+    
+    # 获取用户名
+    user_name = "未知用户"
+    if "sender" in data and data["sender"]:
+        user_info = data["sender"]
+        user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+    else:
+        user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
+    
+    # 获取操作者名称
+    operator_name = "未知操作者"
+    if operator_id == BOT_ID:
+        operator_name = "机器人"
+    else:
+        operator_name = data.get("operator_name", data.get("operator_card", f"操作者:{operator_id}"))
+    
+    msg = f"[反撤回] {group_name}({group_id}) | {user_name}({user_id}) | {operator_name}({operator_id}) | 内容:{text}"
+    print(Fore.LIGHTRED_EX + Style.BRIGHT + "  ▶ " + msg)
     write_log(msg)
 
 # =========================
@@ -335,6 +519,21 @@ def load_auto_reply_rules():
     global auto_reply_rules
     auto_reply_rules = {}
     
+    # 如果文件不存在，创建默认的auto.txt文件
+    if not os.path.exists(AUTO_REPLY_FILE):
+        try:
+            with open(AUTO_REPLY_FILE, "w", encoding="utf-8") as f:
+                f.write("# LinDream自动回复规则文件\n")
+                f.write("# 格式：关键词 回复内容\n")
+                f.write("# 每行一条规则，关键词与回复内容之间用空格分隔\n")
+                f.write("# 例：你好 你好呀！有什么可以帮助你的吗？\n")
+                f.write("你好 你好呀！有什么可以帮助你的吗？\n")
+                f.write("晚安 晚安！祝你有个好梦~\n")
+                f.write("早上好 早上好！美好的一天开始了！\n")
+            log_platform_info(f"已创建默认自动回复文件: {AUTO_REPLY_FILE}")
+        except Exception as e:
+            log_platform_info(f"创建默认自动回复文件失败: {e}")
+    
     if os.path.exists(AUTO_REPLY_FILE):
         try:
             with open(AUTO_REPLY_FILE, "r", encoding="utf-8") as f:
@@ -354,6 +553,22 @@ def load_random_replies():
     global random_replies
     random_replies = []
     
+    # 如果文件不存在，创建默认的random.txt文件
+    if not os.path.exists(RANDOM_REPLY_FILE):
+        try:
+            with open(RANDOM_REPLY_FILE, "w", encoding="utf-8") as f:
+                f.write("# LinDream戳一戳随机回复内容\n")
+                f.write("# 每行一条回复内容，随机选择\n")
+                f.write("嗯？突然戳我干嘛~\n")
+                f.write("哎呀，被你戳到了呢~\n")
+                f.write("戳戳我干嘛，我还在工作呢！\n")
+                f.write("唔...戳得我有点痒痒的~\n")
+                f.write("不要戳我啦，专心工作~\n")
+                f.write("戳我一下又不会变强哦~\n")
+            log_platform_info(f"已创建默认戳一戳随机回复文件: {RANDOM_REPLY_FILE}")
+        except Exception as e:
+            log_platform_info(f"创建默认戳一戳随机回复文件失败: {e}")
+    
     if os.path.exists(RANDOM_REPLY_FILE):
         try:
             with open(RANDOM_REPLY_FILE, "r", encoding="utf-8") as f:
@@ -366,6 +581,23 @@ def load_random_replies():
 # 处理自动回复
 # =========================
 async def handle_auto_reply(websocket, data):
+    # 检查是否启用了伪群友补丁，如果是，则跳过其他处理
+    if 'pseudo_friend' in applied_patches:
+        pseudo_friend_module = applied_patches['pseudo_friend'].get('module')
+        if pseudo_friend_module and hasattr(pseudo_friend_module, 'is_patch_applied'):
+            if pseudo_friend_module.is_patch_applied():
+                # 如果伪群友补丁启用，根据配置决定是否跳过
+                if (hasattr(pseudo_friend_module, 'should_disable_feature') and 
+                    pseudo_friend_module.should_disable_feature('plugins')):
+                    # 不处理插件
+                    pass
+                else:
+                    # 如果不禁用插件，则让插件处理
+                    await handle_plugin_messages(websocket, data)
+                
+                # 伪群友补丁会处理消息，这里直接返回
+                return
+    
     # 只处理群消息和私聊消息
     if data.get("post_type") != "message":
         # 让插件处理非消息事件
@@ -382,16 +614,11 @@ async def handle_auto_reply(websocket, data):
     if await handle_plugin_messages(websocket, data):
         return  # 插件已处理消息，不再继续处理
         
-    # 首先尝试处理指令
-    config_file = "config.json"
-    config_data = {}
-    if os.path.exists(config_file):
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                config_data = json.load(f)
-        except:
-            pass
+    # 检查自动回复功能是否启用
+    if not config_data.get("features", {}).get("auto_reply_enabled", True):
+        return  # 自动回复功能已关闭，直接返回
     
+    # 首先尝试处理指令
     # 检查是否@机器人或使用指令前缀
     message_content = format_message(data.get("message")).strip()
     is_at_bot = False
@@ -413,38 +640,53 @@ async def handle_auto_reply(websocket, data):
     if message_content.startswith("%"):
         is_ai_prefix = True
     
+    # 检查伪群友补丁是否启用
+    pseudo_friend_disabled_command = False
+    pseudo_friend_disabled_percent = False
+    if 'pseudo_friend' in applied_patches:
+        pseudo_friend_module = applied_patches['pseudo_friend'].get('module')
+        if pseudo_friend_module and hasattr(pseudo_friend_module, 'is_patch_applied') and pseudo_friend_module.is_patch_applied():
+            if (hasattr(pseudo_friend_module, 'should_disable_feature') and 
+                pseudo_friend_module.should_disable_feature('commands')):
+                pseudo_friend_disabled_command = True
+            if (hasattr(pseudo_friend_module, 'should_disable_feature') and 
+                pseudo_friend_module.should_disable_feature('percent_prefix')):
+                pseudo_friend_disabled_percent = True
+
     # 如果是@机器人或使用指令前缀，则处理指令
     if is_at_bot or is_command_prefix:
-        # 如果是指令消息，处理后返回
-        if await handle_commands(websocket, data, config_data):
-            return
+        if not pseudo_friend_disabled_command:  # 仅当伪群友补丁未禁用指令时才处理
+            # 如果是指令消息，处理后返回
+            if await handle_commands(websocket, data, config_data):
+                return
     # 如果不是指令触发条件但使用了AI前缀，触发AI聊天
     elif is_ai_prefix:
-        # 提取%后的内容
-        ai_content = message_content[1:].strip()  # 去掉%并去除首尾空格
-        if ai_content:
-            api_key = config_data.get("api_key", "")
-            api_url = config_data.get("api_url", "https://apis.iflow.cn/v1/chat/completions")
-            model_name = config_data.get("model_name", "qwen3-coder-plus")
-            if api_key:
-                # 获取会话
-                sender = data.get("sender", {})
-                sender_id = sender.get("user_id")
-                if data.get("message_type") == "group":
-                    session = get_group_session(data.get("group_id"))
-                else:
-                    session = get_user_session(sender_id)
-                
-                ai_response = await chat_with_ai(ai_content, api_key, api_url, model_name, session)
-                if ai_response:
-                    # 更新会话历史
-                    update_session_history(session, ai_content, ai_response)
+        if not pseudo_friend_disabled_percent:  # 仅当伪群友补丁未禁用%前缀时才处理
+            # 提取%后的内容
+            ai_content = message_content[1:].strip()  # 去掉%并去除首尾空格
+            if ai_content:
+                api_key = config_data.get("api_key", "")
+                api_url = config_data.get("api_url", "https://apis.iflow.cn/v1/chat/completions")
+                model_name = config_data.get("model_name", "qwen3-coder-plus")
+                if api_key:
+                    # 获取会话
+                    sender = data.get("sender", {})
+                    sender_id = sender.get("user_id")
+                    if data.get("message_type") == "group":
+                        session = get_group_session(data.get("group_id"))
+                    else:
+                        session = get_user_session(sender_id)
                     
-                    group_id = data.get("group_id")
-                    user_id = sender_id
-                    await send_message(websocket, ai_response, group_id=group_id, user_id=user_id if not group_id else None)
-                    log_platform_info(f"AI回复: {ai_response}")
-                    return
+                    ai_response = await chat_with_ai(ai_content, api_key, api_url, model_name, session)
+                    if ai_response:
+                        # 更新会话历史
+                        update_session_history(session, ai_content, ai_response)
+                        
+                        group_id = data.get("group_id")
+                        user_id = sender_id
+                        await send_message(websocket, ai_response, group_id=group_id, user_id=user_id if not group_id else None)
+                        log_platform_info(f"AI回复: {ai_response}")
+                        return
     # 如果不是指令或AI前缀，进行关键词匹配等
     else:
         # 获取消息内容
@@ -462,42 +704,58 @@ async def handle_auto_reply(websocket, data):
                 log_platform_info(f"触发关键词回复: {keyword} -> {reply}")
                 return
         
-        # 检查是否@机器人（随机回复）
+        # 检查是否@机器人（随机回复或AI聊天）
         if data.get("message_type") == "group":
             for msg_item in data.get("message", []):
                 if msg_item.get("type") == "at" and str(msg_item.get("data", {}).get("qq", "")) == str(BOT_ID):
-                    # @了机器人，随机回复
-                    if random_replies:
-                        reply = random.choice(random_replies)
-                        await send_message(websocket, reply, group_id=data.get("group_id"))
-                        log_platform_info(f"触发@随机回复: {reply}")
+                    # @了机器人，提取文本内容进行AI聊天
+                    text_content = ""
+                    for text_msg in data.get("message", []):
+                        if text_msg.get("type") == "text":
+                            text_content += text_msg.get("data", {}).get("text", "")
+                    
+                    text_content = text_content.strip()
+                    if text_content and api_key:  # 如果有文本内容和API密钥，进行AI聊天
+                        # 获取会话
+                        session = get_group_session(data.get("group_id"))
+                        
+                        ai_response = await chat_with_ai(text_content, api_key, api_url, model_name, session)
+                        if ai_response:
+                            # 更新会话历史
+                            update_session_history(session, text_content, ai_response)
+                            
+                            group_id = data.get("group_id")
+                            await send_message(websocket, ai_response, group_id=group_id)
+                            log_platform_info(f"AI回复: {ai_response}")
+                            return
+                    else:
+                        # @了机器人但没有文本内容或没有API密钥，随机回复
+                        if random_replies:
+                            reply = random.choice(random_replies)
+                            await send_message(websocket, reply, group_id=data.get("group_id"))
+                            log_platform_info(f"触发@随机回复: {reply}")
+                        return
+        # 在私聊中，如果不是指令，直接进行AI聊天
+        elif data.get("message_type") == "private" and message_content and not is_command_prefix:
+            # 获取API配置
+            api_key = config_data.get("api_key", "")
+            api_url = config_data.get("api_url", "https://apis.iflow.cn/v1/chat/completions")
+            model_name = config_data.get("model_name", "qwen3-coder-plus")
+            
+            if api_key:
+                # 获取用户会话
+                session = get_user_session(sender_id)
+                
+                # 进行AI聊天
+                ai_response = await chat_with_ai(message_content, api_key, api_url, model_name, session)
+                if ai_response:
+                    # 更新会话历史
+                    update_session_history(session, message_content, ai_response)
+                    
+                    user_id = sender_id
+                    await send_message(websocket, ai_response, user_id=user_id)
+                    log_platform_info(f"AI回复: {ai_response}")
                     return
-    
-    # 获取消息内容
-    message_content = format_message(data.get("message")).strip()
-    
-    # 检查关键词自动回复（绝对匹配）
-    for keyword, reply in auto_reply_rules.items():
-        # 绝对匹配：消息内容完全等于关键词
-        if message_content == keyword:
-            # 发送回复
-            if data.get("message_type") == "group":
-                await send_message(websocket, reply, group_id=data.get("group_id"))
-            else:
-                await send_message(websocket, reply, user_id=data.get("sender", {}).get("user_id"))
-            log_platform_info(f"触发关键词回复: {keyword} -> {reply}")
-            return
-    
-    # 检查是否@机器人（随机回复）
-    if data.get("message_type") == "group":
-        for msg_item in data.get("message", []):
-            if msg_item.get("type") == "at" and str(msg_item.get("data", {}).get("qq", "")) == str(BOT_ID):
-                # @了机器人，随机回复
-                if random_replies:
-                    reply = random.choice(random_replies)
-                    await send_message(websocket, reply, group_id=data.get("group_id"))
-                    log_platform_info(f"触发@随机回复: {reply}")
-                return
 
 # =========================
 # 权限检查
@@ -542,6 +800,16 @@ def get_group_session(group_id):
             "persona": "default"
         }
     return group_sessions[group_id]
+
+def clear_group_session_history(session):
+    """清除群聊会话历史"""
+    session["history"] = []
+    log_platform_info("群聊会话历史已清除")
+
+def clear_session_history(session):
+    """清除会话历史"""
+    session["history"] = []
+    log_platform_info("会话历史已清除")
 
 def update_session_history(session, user_message, ai_response):
     """更新会话历史"""
@@ -743,7 +1011,8 @@ async def handle_commands(websocket, data, config_data):
         help_text += "/plugin - 显示插件列表\n"
         help_text += "/persona - 显示当前人格\n"
         help_text += "/persona ls - 列出所有人格\n"
-        help_text += "/persona <序号/名称> - 切换人格\n"
+        help_text += "/persona <序号/名称> - 切换人格（切换时自动清除对话历史）\n"
+        help_text += "/clear - 清除当前对话历史\n"
         
         if is_authorized(user_id, 3, config_data):  # 主人权限
             help_text += "/reset - 重载插件、自动回复、戳一戳等配置\n"
@@ -879,20 +1148,7 @@ async def handle_commands(websocket, data, config_data):
     
     # 指令列表（所有用户可用）
     elif command == "cmd":
-        cmd_text = "指令列表：\n"
-        cmd_text += "/help - 帮助信息\n"
-        cmd_text += "/limit - 权限等级\n"
-        cmd_text += "/plugin - 插件列表\n"
-        cmd_text += "/persona - 列出人格\n"
-        cmd_text += "/persona <序号/名称> - 切换人格\n"
-        
-        if is_authorized(user_id, 2, config_data):  # 管理员及以上权限
-            cmd_text += "/reset - 重载插件、自动回复、戳一戳等配置\n"
-        
-        if is_authorized(user_id, 3, config_data):  # 主人权限
-            cmd_text += "/op <QQ号> - 添加管理员\n"
-            cmd_text += "/reop <QQ号> - 移除管理员\n"
-        
+        cmd_text = "请使用 /help 查看帮助信息"
         await send_message(websocket, cmd_text, group_id=group_id, user_id=user_id if not group_id else None)
         return True
     
@@ -910,7 +1166,7 @@ async def handle_commands(websocket, data, config_data):
         if not args:
             # 如果没有参数，列出人格
             available = "\n".join([f"{i+1}. {persona}" for i, persona in enumerate(personas)])
-            response = f"可用人格:\n{available}\n当前人格: {get_user_session(user_id).get('persona', 'default')}\n使用 /persona <序号/名称> 切换人格"
+            response = f"可用人格:\n{available}\n当前人格: {get_user_session(user_id).get('persona', 'default')}\n使用 /persona <序号/名称> 切换人格\n使用 /clear 清除当前对话历史"
             await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
             return True
         elif len(args) == 1 and args[0] == "ls":
@@ -929,18 +1185,24 @@ async def handle_commands(websocket, data, config_data):
                 index = int(arg) - 1
                 if 0 <= index < len(personas):
                     selected_persona = personas[index]
+                    old_persona = user_session["persona"]
                     user_session["persona"] = selected_persona
-                    await send_message(websocket, f"已切换到人格: {selected_persona}", group_id=group_id, user_id=user_id if not group_id else None)
-                    log_platform_info(f"用户 {user_id} 切换到人格: {selected_persona}")
+                    # 切换人格时清除会话历史，避免人格混淆
+                    clear_session_history(user_session)
+                    await send_message(websocket, f"已切换到人格: {selected_persona}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
+                    log_platform_info(f"用户 {user_id} 从人格 {old_persona} 切换到人格: {selected_persona}，会话历史已清除")
                 else:
                     response = f"序号超出范围。使用 /persona 查看可用序号。"
                     await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
             else:
                 # 按名称切换
                 if arg in personas:
+                    old_persona = user_session["persona"]
                     user_session["persona"] = arg
-                    await send_message(websocket, f"已切换到人格: {arg}", group_id=group_id, user_id=user_id if not group_id else None)
-                    log_platform_info(f"用户 {user_id} 切换到人格: {arg}")
+                    # 切换人格时清除会话历史，避免人格混淆
+                    clear_session_history(user_session)
+                    await send_message(websocket, f"已切换到人格: {arg}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
+                    log_platform_info(f"用户 {user_id} 从人格 {old_persona} 切换到人格: {arg}，会话历史已清除")
                 else:
                     available = ", ".join(personas)
                     response = f"人格不存在。可用人格: {available}\n使用 /persona 查看带序号的列表"
@@ -1052,16 +1314,38 @@ async def handle_commands(websocket, data, config_data):
         await send_message(websocket, plugin_list, group_id=group_id, user_id=user_id if not group_id else None)
         return True
     
+    # 清除对话历史指令（所有用户可用）
+    elif command == "clear":
+        # 清除用户会话历史
+        user_session = get_user_session(user_id)
+        clear_session_history(user_session)
+        
+        # 如果是群聊，也清除群聊会话历史
+        if group_id:
+            group_session = get_group_session(group_id)
+            clear_group_session_history(group_session)
+            response = "✅ 对话历史已清除，可以开始新的对话了！"
+        else:
+            response = "✅ 私聊对话历史已清除，可以开始新的对话了！"
+        
+        await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
+        return True
+    
     # 未知指令
     else:
         await send_message(websocket, "未知指令，发送 /help 查看可用指令", group_id=group_id, user_id=user_id if not group_id else None)
         return True
 
+# 配置变量
+BOT_ID = None
+MAX_DOWNLOAD_WORKERS = 3
+config_data = {}
+
 # =========================
 # 配置加载
 # =========================
 def load_config():
-    global BOT_ID, MAX_DOWNLOAD_WORKERS
+    global BOT_ID, MAX_DOWNLOAD_WORKERS, config_data
     config_file = "config.json"
     
     if not os.path.exists(config_file):
@@ -1098,6 +1382,13 @@ def load_config():
         except ValueError:
             MAX_DOWNLOAD_WORKERS = 3
             
+        # 询问功能开关配置
+        print(Fore.LIGHTYELLOW_EX + "正在配置功能开关...")
+        recall_enabled = input("是否启用反撤回功能？(y/n，默认y): ").strip().lower() != 'n'
+        media_download_enabled = input("是否启用图片/视频自动下载缓存？(y/n，默认y): ").strip().lower() != 'n'
+        poke_reply_enabled = input("是否启用戳一戳随机回复？(y/n，默认y): ").strip().lower() != 'n'
+        auto_reply_enabled = input("是否启用自动回复？(y/n，默认y): ").strip().lower() != 'n'
+        
         config_data = {
             "bot_id": BOT_ID,
             "owner_id": owner_id,  # 添加主人QQ号
@@ -1106,7 +1397,16 @@ def load_config():
             "model_name": model_name,  # 模型名称
             "max_download_workers": MAX_DOWNLOAD_WORKERS,
             "admins": [],  # 管理员列表
-            "users": []   # 用户列表
+            "users": [],   # 用户列表
+            "patches": {
+                "enabled": []  # 补丁列表
+            },
+            "features": {
+                "recall_enabled": recall_enabled,          # 反撤回功能开关
+                "media_download_enabled": media_download_enabled,  # 媒体文件下载功能开关
+                "poke_reply_enabled": poke_reply_enabled,      # 戳一戳随机回复开关
+                "auto_reply_enabled": auto_reply_enabled       # 自动回复开关
+            }
         }
         
         with open(config_file, "w", encoding="utf-8") as f:
@@ -1122,15 +1422,13 @@ def load_config():
     # 加载自动回复规则和随机回复
     load_auto_reply_rules()
     load_random_replies()
-    
-    # 系统报错提示
-    print(Fore.LIGHTRED_EX + "注意：如遇问题请及时检查配置文件")
 
 # =========================
 # WebSocket 主处理
 # =========================
-async def server(websocket):
-    log_platform_info(f"NapCat 已连接: {websocket.remote_address}")
+async def server(websocket, path):
+    print(Fore.LIGHTGREEN_EX + Style.BRIGHT + f"  ▶ [NapCat连接] {now()} | 已连接: {websocket.remote_address}")
+    write_log(f"[NapCat连接] {now()} | 已连接: {websocket.remote_address}")
 
     try:
         async for raw in websocket:
@@ -1179,14 +1477,43 @@ async def server(websocket):
                 
                 msg_id = data.get("message_id") or data.get("msg_id")
                 message_cache[msg_id] = data
-                media_files = await handle_media(
-                    data.get("message", []),
-                    group_name=data.get("group_name","") if data.get("message_type")=="group" else "",
-                    group_id=data.get("group_id","") if data.get("message_type")=="group" else "",
-                    sender_name=sender.get("nickname","未知"),
-                    sender_id=sender.get("user_id","未知")
-                )
+                
+                # 检查媒体文件下载功能是否启用
+                media_files = []
+                if config_data.get("features", {}).get("media_download_enabled", True):
+                    media_files = await handle_media(
+                        data.get("message", []),
+                        group_name=data.get("group_name","") if data.get("message_type")=="group" else "",
+                        group_id=data.get("group_id","") if data.get("message_type")=="group" else "",
+                        sender_name=sender.get("nickname","未知"),
+                        sender_id=sender.get("user_id","未知")
+                    )
+                
                 log_communication(data, media_files, is_bot_message)
+                
+                # 检查并处理伪群友补丁的消息
+                if 'pseudo_friend' in applied_patches:
+                    pseudo_friend_module = applied_patches['pseudo_friend'].get('module')
+                    if pseudo_friend_module and hasattr(pseudo_friend_module, 'is_patch_applied'):
+                        if pseudo_friend_module.is_patch_applied():
+                            # 设置WebSocket实例并处理消息
+                            if hasattr(pseudo_friend_module, 'set_websocket_instance'):
+                                pseudo_friend_module.set_websocket_instance(websocket)
+                            if hasattr(pseudo_friend_module, 'process_message'):
+                                # 伪群友补丁处理消息
+                                processed = await pseudo_friend_module.process_message(websocket, data, BOT_ID, config_data)
+                                if processed:
+                                    # 如果消息已被处理，则跳过后续处理
+                                    continue
+                
+                # 更新补丁中的机器人状态
+                if applied_patches and 'web_status' in applied_patches:
+                    try:
+                        patch_module = applied_patches['web_status']['module']
+                        if hasattr(patch_module, 'update_robot_status'):
+                            patch_module.update_robot_status(data)
+                    except Exception as e:
+                        log_platform_info(f"更新机器人状态失败: {e}")
                 
                 # 处理自动回复
                 await handle_auto_reply(websocket, data)
@@ -1204,27 +1531,55 @@ async def server(websocket):
                 target_id = data.get("target_id")
                 
                 # 获取群名和用户名
-                group_name = "私聊"
                 if group_id:
-                    # 尝试从缓存中获取群名
-                    group_name = f"群:{group_id}"
+                    # 尝试从数据中获取群名称
+                    group_name = data.get("group_name", f"群:{group_id}")
+                    if not group_name or group_name == f"群:{group_id}":
+                        group_name = f"群:{group_id}"
+                else:
+                    group_name = "私聊"
                 
-                # 尝试从缓存中获取用户名
-                user_name = f"用户:{user_id}"
-                target_name = f"用户:{target_id}"
+                # 获取用户名称
+                user_name = "未知用户"
+                if "sender" in data and data["sender"]:
+                    user_info = data["sender"]
+                    user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+                else:
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
                 
-                msg = f"[戳一戳] {group_name} | {user_name} 戳了 {target_name}"
-                print(Fore.LIGHTBLUE_EX + msg)
+                # 获取目标用户名称
+                target_name = "未知用户"
+                if target_id == BOT_ID:
+                    target_name = "机器人"
+                else:
+                    target_name = data.get("target_name", data.get("target_card", f"用户:{target_id}"))
+                
+                if group_id:
+                    msg = f"[戳一戳] {group_name}({group_id}) | {user_name}({user_id}) 戳了 {target_name}({target_id})"
+                else:
+                    msg = f"[戳一戳] 私聊 | {user_name}({user_id}) 戳了 {target_name}({target_id})"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
                 write_log(msg)
                 
-                # 如果是戳机器人，随机回复
-                if str(target_id) == str(BOT_ID) and random_replies:
-                    reply = random.choice(random_replies)
-                    if group_id:
-                        await send_message(websocket, reply, group_id=group_id)
-                    else:
-                        await send_message(websocket, reply, user_id=user_id)
-                    log_platform_info(f"触发戳一戳随机回复: {reply}")
+                # 检查是否启用了伪群友补丁
+                pseudo_friend_disabled_poke = False
+                if 'pseudo_friend' in applied_patches:
+                    pseudo_friend_module = applied_patches['pseudo_friend'].get('module')
+                    if pseudo_friend_module and hasattr(pseudo_friend_module, 'is_patch_applied') and pseudo_friend_module.is_patch_applied():
+                        if (hasattr(pseudo_friend_module, 'should_disable_feature') and 
+                            pseudo_friend_module.should_disable_feature('poke_reply')):
+                            pseudo_friend_disabled_poke = True
+                
+                # 检查戳一戳随机回复功能是否启用
+                if config_data.get("features", {}).get("poke_reply_enabled", True) and not pseudo_friend_disabled_poke:
+                    # 如果是戳机器人，随机回复
+                    if str(target_id) == str(BOT_ID) and random_replies:
+                        reply = random.choice(random_replies)
+                        if group_id:
+                            await send_message(websocket, reply, group_id=group_id)
+                        else:
+                            await send_message(websocket, reply, user_id=user_id)
+                        log_platform_info(f"触发戳一戳随机回复: {reply}")
                 
                 continue
 
@@ -1235,18 +1590,27 @@ async def server(websocket):
                 card_new = data.get("card_new", "")
                 card_old = data.get("card_old", "")
                 
-                # 获取群名和用户名
-                group_name = f"群:{group_id}"
-                user_name = f"用户:{user_id}"
+                # 获取群名称
+                group_name = data.get("group_name", f"群:{group_id}")
+                if not group_name or group_name == f"群:{group_id}":
+                    group_name = f"群:{group_id}"
                 
-                msg = f"[群名片变更] {group_name} | {user_name} | 旧名片: '{card_old}' -> 新名片: '{card_new}'"
-                print(Fore.LIGHTBLUE_EX + msg)
+                # 获取用户名，优先使用新名片，然后是旧名片，最后是用户ID
+                user_name = card_new if card_new else card_old
+                if not user_name:
+                    # 尝试从其他字段获取用户名
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
+                
+                msg = f"[群名片变更] {group_name}({group_id}) | {user_name}({user_id}) | 旧名片: '{card_old}' -> 新名片: '{card_new}'"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
                 write_log(msg)
                 continue
 
             # 撤回
             if post_type=="notice" and data.get("notice_type")=="group_recall":
-                log_recall(data)
+                # 检查反撤回功能是否启用
+                if config_data.get("features", {}).get("recall_enabled", True):
+                    log_recall(data)
                 continue
 
             # 输入状态事件
@@ -1256,15 +1620,27 @@ async def server(websocket):
                 status_text = data.get("status_text", "")
                 event_type = data.get("event_type")
                 
-                # 获取群名和用户名
-                group_name = "私聊"
+                # 获取群名称
                 if group_id and group_id != 0:
-                    group_name = f"群:{group_id}"
+                    group_name = data.get("group_name", f"群:{group_id}")
+                    if not group_name or group_name == f"群:{group_id}":
+                        group_name = f"群:{group_id}"
+                else:
+                    group_name = "私聊"
                 
-                user_name = f"用户:{user_id}"
+                # 获取用户名
+                user_name = "未知用户"
+                if "sender" in data and data["sender"]:
+                    user_info = data["sender"]
+                    user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+                else:
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
                 
-                msg = f"[输入状态] {group_name} | {user_name} | 状态: {status_text} | 类型: {event_type}"
-                print(Fore.LIGHTBLUE_EX + msg)
+                if group_id and group_id != 0:
+                    msg = f"[输入状态] {group_name}({group_id}) | {user_name}({user_id}) | 状态: {status_text} | 类型: {event_type}"
+                else:
+                    msg = f"[输入状态] 私聊 | {user_name}({user_id}) | 状态: {status_text} | 类型: {event_type}"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
                 write_log(msg)
                 continue
 
@@ -1275,14 +1651,38 @@ async def server(websocket):
                 operator_id = data.get("operator_id")
                 sub_type = data.get("sub_type")
                 
-                # 获取群名和用户名
-                group_name = f"群:{group_id}"
-                user_name = f"用户:{user_id}"
-                operator_name = f"操作者:{operator_id}"
+                # 检查是否为机器人自己加入（不处理这种情况）
+                if str(user_id) == str(BOT_ID):
+                    log_platform_info(f"机器人自己加入群 {group_id}，忽略欢迎消息")
+                    continue
                 
-                msg = f"[群成员增加] {group_name} | {user_name} | {operator_name} | 方式: {sub_type}"
-                print(Fore.LIGHTBLUE_EX + msg)
+                # 获取群名称
+                group_name = data.get("group_name", f"群:{group_id}")
+                if not group_name or group_name == f"群:{group_id}":
+                    group_name = f"群:{group_id}"
+                
+                # 获取用户名
+                user_name = "未知用户"
+                if "sender" in data and data["sender"]:
+                    user_info = data["sender"]
+                    user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+                else:
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
+                
+                # 获取操作者名称
+                operator_name = "未知操作者"
+                if operator_id == BOT_ID:
+                    operator_name = "机器人"
+                else:
+                    operator_name = data.get("operator_name", data.get("operator_card", f"操作者:{operator_id}"))
+                
+                msg = f"[群成员增加] {group_name}({group_id}) | {user_name}({user_id}) | {operator_name}({operator_id}) | 方式: {sub_type}"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
                 write_log(msg)
+                
+                # 尝试调用插件处理群成员增加事件
+                await handle_plugin_messages(websocket, data)
+                
                 continue
 
             # 群成员减少事件
@@ -1292,10 +1692,25 @@ async def server(websocket):
                 operator_id = data.get("operator_id")
                 sub_type = data.get("sub_type")
                 
-                # 获取群名和用户名
-                group_name = f"群:{group_id}"
-                user_name = f"用户:{user_id}"
-                operator_name = f"操作者:{operator_id}"
+                # 获取群名称
+                group_name = data.get("group_name", f"群:{group_id}")
+                if not group_name or group_name == f"群:{group_id}":
+                    group_name = f"群:{group_id}"
+                
+                # 获取用户名
+                user_name = "未知用户"
+                if "sender" in data and data["sender"]:
+                    user_info = data["sender"]
+                    user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+                else:
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
+                
+                # 获取操作者名称
+                operator_name = "未知操作者"
+                if operator_id == BOT_ID:
+                    operator_name = "机器人"
+                else:
+                    operator_name = data.get("operator_name", data.get("operator_card", f"操作者:{operator_id}"))
                 
                 # 解释子类型
                 sub_type_desc = {
@@ -1306,8 +1721,8 @@ async def server(websocket):
                 
                 sub_type_text = sub_type_desc.get(sub_type, sub_type)
                 
-                msg = f"[群成员减少] {group_name} | {user_name} | {operator_name} | 方式: {sub_type_text}"
-                print(Fore.LIGHTBLUE_EX + msg)
+                msg = f"[群成员减少] {group_name}({group_id}) | {user_name}({user_id}) | {operator_name}({operator_id}) | 方式: {sub_type_text}"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
                 write_log(msg)
                 continue
 
@@ -1332,19 +1747,124 @@ async def server(websocket):
                 
                 formatted_size = format_size(file_size) if file_size > 0 else "未知大小"
                 
-                # 获取群名和用户名
-                group_name = f"群:{group_id}"
-                user_name = f"用户:{user_id}"
+                # 获取群名称
+                group_name = data.get("group_name", f"群:{group_id}")
+                if not group_name or group_name == f"群:{group_id}":
+                    group_name = f"群:{group_id}"
+                
+                # 获取用户名
+                user_name = "未知用户"
+                if "sender" in data and data["sender"]:
+                    user_info = data["sender"]
+                    user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+                else:
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
                 
                 # 显示文件信息和下载链接
-                msg = f"[文件上传] {group_name} | {user_name} | 文件: {file_name} | 大小: {formatted_size}"
-                print(Fore.LIGHTBLUE_EX + msg)
+                msg = f"[文件上传] {group_name}({group_id}) | {user_name}({user_id}) | 文件: {file_name} | 大小: {formatted_size}"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
                 write_log(msg)
                 
                 # 显示下载链接信息
                 if file_id:
                     download_msg = f"文件下载链接: 群{group_id}文件ID {file_id}"
                     log_platform_info(download_msg)
+                continue
+
+            # 群头衔变更事件
+            if post_type=="notice" and data.get("notice_type")=="notify" and data.get("sub_type")=="title":
+                group_id = data.get("group_id")
+                user_id = data.get("user_id")
+                title = data.get("title", "")
+                
+                # 尝试获取群名称和用户名称
+                group_name = data.get("group_name", f"群:{group_id}")
+                if not group_name or group_name == f"群:{group_id}":
+                    group_name = f"群:{group_id}"
+                
+                # 获取用户名 - 需要通过API获取用户名称
+                user_name = "未知用户"
+                if "sender" in data and data["sender"]:
+                    user_info = data["sender"]
+                    user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+                else:
+                    # 如果没有sender信息，尝试从其他字段获取
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
+                
+                msg = f"[群头衔变更] {group_name}({group_id}) | {user_name}({user_id}) | 新头衔: {title}"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
+                write_log(msg)
+                continue
+
+            # 群消息表情表态事件
+            if post_type=="notice" and data.get("notice_type")=="group_msg_emoji_like":
+                group_id = data.get("group_id")
+                user_id = data.get("user_id")
+                message_id = data.get("message_id")
+                likes = data.get("likes", [])
+                is_add = data.get("is_add", True)
+                
+                # 获取群名称
+                group_name = data.get("group_name", f"群:{group_id}")
+                if not group_name or group_name == f"群:{group_id}":
+                    group_name = f"群:{group_id}"
+                
+                # 获取用户名
+                user_name = "未知用户"
+                if "sender" in data and data["sender"]:
+                    user_info = data["sender"]
+                    user_name = user_info.get("nickname", user_info.get("card", f"用户:{user_id}"))
+                else:
+                    user_name = data.get("user_name", data.get("card", f"用户:{user_id}"))
+                
+                # 解析表情信息
+                emoji_info = []
+                for like in likes:
+                    emoji_id = like.get("emoji_id", "")
+                    count = like.get("count", 1)
+                    emoji_info.append(f"表情ID:{emoji_id}(次数:{count})")
+                
+                emoji_str = ", ".join(emoji_info) if emoji_info else "未知表情"
+                
+                action = "添加" if is_add else "取消"
+                msg = f"[群消息表情表态] {group_name}({group_id}) | {user_name}({user_id}) | 消息ID:{message_id} | {action}表态: {emoji_str}"
+                print(Fore.LIGHTBLUE_EX + Style.BRIGHT + "  ▶ " + msg)
+                write_log(msg)
+                
+                # 尝试调用插件处理群消息表情表态事件
+                await handle_plugin_messages(websocket, data)
+                
+                continue
+
+            # 消息发送事件
+            if post_type == "message_sent":
+                message_sent_type = data.get("message_sent_type", "unknown")
+                message_type = data.get("message_type", "unknown")
+                
+                # 获取发送者信息
+                sender_info = data.get("sender", {})
+                sender_nick = sender_info.get("nickname", sender_info.get("user_id", "未知"))
+                sender_id = sender_info.get("user_id", data.get("self_id", "未知"))
+                
+                # 获取消息内容
+                raw_message = data.get("raw_message", "[无内容]")
+                if len(raw_message) > 100:
+                    raw_message = raw_message[:100] + "..."
+                
+                # 根据消息类型显示不同信息
+                if message_type == "private":
+                    target_id = data.get("target_id", "未知")
+                    msg = f"[机器人发送私聊] {sender_nick}({sender_id}) -> 用户({target_id}) | 内容: {raw_message}"
+                elif message_type == "group":
+                    group_id = data.get("group_id", "未知")
+                    group_name = data.get("group_name", f"群:{group_id}")
+                    msg = f"[机器人发送群聊] {group_name}({group_id}) | 内容: {raw_message}"
+                else:
+                    target_id = data.get("target_id", data.get("group_id", "未知"))
+                    msg = f"[机器人发送消息] 类型:{message_type} 目标:{target_id} | 内容: {raw_message}"
+                
+                print(Fore.LIGHTGREEN_EX + Style.BRIGHT + "  ▶ " + msg)
+                write_log(msg)
                 continue
 
             # 检查是否有echo字段（可能是消息发送响应）
@@ -1356,17 +1876,37 @@ async def server(websocket):
                     log_platform_info(f"消息发送失败: {data.get('message', '')}")
                 continue
 
-            log_platform_info("未知事件: " + str(data))
+            print(Fore.LIGHTMAGENTA_EX + Style.BRIGHT + "  ▶ [未知事件] " + now() + " | " + str(data))
+            write_log(f"[未知事件] {now()} | {str(data)}")
     except websockets.exceptions.ConnectionClosed:
-        log_platform_info("NapCat 断开连接")
+        print(Fore.LIGHTRED_EX + Style.BRIGHT + f"  ▶ [NapCat断开] {now()} | 连接已断开")
+        write_log(f"[NapCat断开] {now()} | 连接已断开")
     except Exception as e:
         log_platform_info(f"错误: {e}")
+
+# =========================
+# 自定义WebSocket服务器处理函数
+# =========================
+async def handle_websocket_connection(websocket):
+    """处理WebSocket连接，捕获握手阶段的错误"""
+    try:
+        # 提供一个空的path参数，因为server函数需要path参数
+        await server(websocket, "")
+    except Exception as e:
+        log_platform_info(f"WebSocket连接处理错误: {e}")
 
 # =========================
 # 主程序
 # =========================
 async def main():
+    print_startup_banner()
     load_config()
+    
+    # 加载补丁
+    load_patches(config_data)
+    
+    # 检查并安装插件依赖
+    check_and_install_plugin_dependencies()
     
     # 加载插件
     load_plugins()
@@ -1375,20 +1915,40 @@ async def main():
     for i in range(MAX_DOWNLOAD_WORKERS):
         asyncio.create_task(download_worker())
     
-    log_platform_info(f"Python WS 服务器启动：ws://0.0.0.0:2048")
-    log_platform_info(f"机器人QQ: {BOT_ID}")
-    log_platform_info(f"下载线程数: {MAX_DOWNLOAD_WORKERS}")
-    log_platform_info(f"已加载 {len(loaded_plugins)} 个插件")
+    print_config_summary(BOT_ID, MAX_DOWNLOAD_WORKERS, len(loaded_plugins), len(applied_patches))
+    print_startup_info()
     
-    async with websockets.serve(server, "0.0.0.0", 2048) as ws_server:
-        try:
-            await asyncio.Future()  # 永不退出
-        except asyncio.CancelledError:
-            pass
-        except KeyboardInterrupt:
-            log_platform_info("服务器手动终止")
-            for task in video_cleanup_tasks:
-                task.cancel()
+    # 系统报错提示（移到最后显示）
+    print(Fore.LIGHTRED_EX + Style.BRIGHT + "  ▶ 注意：如遇问题请及时检查配置文件")
+    
+    # 创建WebSocket服务器，添加异常处理
+    try:
+        import logging
+        # 禁用websockets的详细日志，避免握手错误信息刷屏
+        logging.getLogger('websockets').setLevel(logging.WARNING)
+        
+        async with websockets.serve(
+            handle_websocket_connection,  # 使用包装函数
+            "0.0.0.0", 
+            2048, 
+            ping_interval=20, 
+            ping_timeout=10,
+            close_timeout=10,
+            # 为了捕获握手错误，我们增加一些配置
+            max_size=1024*1024,  # 1MB
+            max_queue=32
+        ) as ws_server:
+            try:
+                await asyncio.Future()  # 永不退出
+            except asyncio.CancelledError:
+                pass
+            except KeyboardInterrupt:
+                log_platform_info("服务器手动终止")
+                for task in video_cleanup_tasks:
+                    task.cancel()
+    except Exception as e:
+        log_platform_info(f"WebSocket服务器启动失败: {e}")
+        raise
 
 if __name__=="__main__":
     try:

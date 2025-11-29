@@ -1,1 +1,1 @@
-测试 LinDream信道正常
+[平台信息] 2025-11-21 19:49:24 | 未知事件: {'time': 1763725764, 'self_id': 177141909, 'post_type': 'notice', 'group_id': 768464439, 'user_id': 3157037483, 'notice_type': 'group_ban', 'operator_id': 2164352319, 'duration': 600, 'sub_type': 'ban'}
