@@ -662,9 +662,61 @@ async def handle_auto_reply(websocket, data):
     # 如果不是指令触发条件但使用了AI前缀，触发AI聊天
     elif is_ai_prefix:
         if not pseudo_friend_disabled_percent:  # 仅当伪群友补丁未禁用%前缀时才处理
-            # 提取%后的内容
-            ai_content = message_content[1:].strip()  # 去掉%并去除首尾空格
-            if ai_content:
+            # 解析消息内容，提取引用消息和%后的内容
+            message_list = data.get("message", [])
+            ai_content = ""
+            quoted_content = ""
+            quoted_images = []  # 存储引用消息中的图片
+            
+            for item in message_list:
+                if item.get("type") == "reply":
+                    # 获取引用的消息内容
+                    quoted_msg_id = item.get("data", {}).get("id")
+                    if quoted_msg_id and quoted_msg_id in message_cache:
+                        quoted_data = message_cache[quoted_msg_id]
+                        quoted_msg_content = quoted_data.get("message", [])
+                        
+                        # 提取引用消息中的文本和图片
+                        for quoted_item in quoted_msg_content:
+                            if quoted_item.get("type") == "text":
+                                quoted_content += quoted_item.get("data", {}).get("text", "")
+                            elif quoted_item.get("type") == "image":
+                                image_url = quoted_item.get("data", {}).get("url") or quoted_item.get("data", {}).get("file", "")
+                                if image_url:
+                                    quoted_images.append(image_url)
+                    elif item.get("data", {}).get("text"):
+                        # 如果没有缓存，尝试从reply数据中直接获取文本
+                        quoted_content = item.get("data", {}).get("text", "")
+                elif item.get("type") == "text":
+                    text = item.get("data", {}).get("text", "")
+                    # 如果是%开头的文本，提取%后的内容
+                    if text.startswith("%"):
+                        ai_content = text[1:].strip()  # 去掉%并去除首尾空格
+                    else:
+                        ai_content = text.strip()
+                elif item.get("type") == "image":
+                    # 如果%后面直接有图片，也添加到图片列表
+                    image_url = item.get("data", {}).get("url") or item.get("data", {}).get("file", "")
+                    if image_url:
+                        quoted_images.append(image_url)
+            
+            # 如果没有从消息列表中提取到AI内容，则从整体消息内容中提取
+            if not ai_content:
+                ai_content = message_content[1:].strip()  # 去掉%并去除首尾空格
+            
+            # 如果既有引用内容又有AI内容，构造更自然的提示
+            if quoted_content and ai_content:
+                # 构造自然的提示，让AI能够自然地回应引用内容
+                combined_content = f"用户引用了消息: \"{quoted_content}\" 并说: {ai_content}。请根据引用的内容进行回应，可以使用类似'XXX说的很对/很有道理/我同意/确实如此'这样的表达方式。"
+            elif quoted_content:
+                # 只有引用内容，让AI回应引用内容
+                combined_content = f"用户引用了消息: \"{quoted_content}\"。请根据引用的内容进行回应，可以使用类似'XXX说的很对/很有道理/我同意/确实如此'这样的表达方式。"
+            elif ai_content:
+                combined_content = f"{ai_content}"
+            else:
+                combined_content = ""
+            
+            if combined_content or quoted_images:
                 api_key = config_data.get("api_key", "")
                 api_url = config_data.get("api_url", "https://apis.iflow.cn/v1/chat/completions")
                 model_name = config_data.get("model_name", "qwen3-coder-plus")
@@ -677,10 +729,10 @@ async def handle_auto_reply(websocket, data):
                     else:
                         session = get_user_session(sender_id)
                     
-                    ai_response = await chat_with_ai(ai_content, api_key, api_url, model_name, session)
+                    ai_response = await chat_with_ai(combined_content, api_key, api_url, model_name, session, quoted_images if quoted_images else None)
                     if ai_response:
                         # 更新会话历史
-                        update_session_history(session, ai_content, ai_response)
+                        update_session_history(session, combined_content or "带图片的引用消息", ai_response)
                         
                         group_id = data.get("group_id")
                         user_id = sender_id
@@ -719,7 +771,7 @@ async def handle_auto_reply(websocket, data):
                         # 获取会话
                         session = get_group_session(data.get("group_id"))
                         
-                        ai_response = await chat_with_ai(text_content, api_key, api_url, model_name, session)
+                        ai_response = await chat_with_ai(text_content, api_key, api_url, model_name, session, None)
                         if ai_response:
                             # 更新会话历史
                             update_session_history(session, text_content, ai_response)
@@ -747,7 +799,7 @@ async def handle_auto_reply(websocket, data):
                 session = get_user_session(sender_id)
                 
                 # 进行AI聊天
-                ai_response = await chat_with_ai(message_content, api_key, api_url, model_name, session)
+                ai_response = await chat_with_ai(message_content, api_key, api_url, model_name, session, None)
                 if ai_response:
                     # 更新会话历史
                     update_session_history(session, message_content, ai_response)
@@ -786,18 +838,22 @@ def is_authorized(user_id, required_level, config_data):
 def get_user_session(user_id):
     """获取用户会话"""
     if user_id not in user_sessions:
+        # 尝试从保存的配置中加载用户人格
+        saved_persona = config_data.get("saved_user_personas", {}).get(str(user_id), "default")
         user_sessions[user_id] = {
             "history": [],
-            "persona": "default"
+            "persona": saved_persona
         }
     return user_sessions[user_id]
 
 def get_group_session(group_id):
     """获取群聊会话"""
     if group_id not in group_sessions:
+        # 尝试从保存的配置中加载群聊人格
+        saved_persona = config_data.get("saved_group_personas", {}).get(str(group_id), "default")
         group_sessions[group_id] = {
             "history": [],
-            "persona": "default"
+            "persona": saved_persona
         }
     return group_sessions[group_id]
 
@@ -810,6 +866,32 @@ def clear_session_history(session):
     """清除会话历史"""
     session["history"] = []
     log_platform_info("会话历史已清除")
+
+def save_persona_to_config(user_id=None, group_id=None, persona_name=None):
+    """保存人格设置到配置文件"""
+    global config_data
+    config_file = "config.json"
+    
+    try:
+        # 读取当前配置
+        with open(config_file, "r", encoding="utf-8") as f:
+            current_config = json.load(f)
+        
+        # 更新保存的人格配置
+        if user_id is not None and persona_name is not None:
+            saved_user_personas = current_config.get("saved_user_personas", {})
+            saved_user_personas[str(user_id)] = persona_name
+            current_config["saved_user_personas"] = saved_user_personas
+        elif group_id is not None and persona_name is not None:
+            saved_group_personas = current_config.get("saved_group_personas", {})
+            saved_group_personas[str(group_id)] = persona_name
+            current_config["saved_group_personas"] = saved_group_personas
+        
+        # 保存回配置文件
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(current_config, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log_platform_info(f"保存人格设置失败: {e}")
 
 def update_session_history(session, user_message, ai_response):
     """更新会话历史"""
@@ -847,7 +929,7 @@ def list_personas():
 # =========================
 # AI聊天功能
 # =========================
-async def chat_with_ai(message, api_key, api_url, model_name, session=None):
+async def chat_with_ai(message, api_key, api_url, model_name, session=None, images=None):
     """与AI进行对话"""
     if not api_key:
         return None
@@ -867,8 +949,24 @@ async def chat_with_ai(message, api_key, api_url, model_name, session=None):
                 messages.append({"role": "user", "content": interaction["user"]})
                 messages.append({"role": "assistant", "content": interaction["ai"]})
         
-        # 添加当前消息
-        messages.append({"role": "user", "content": message})
+        # 准备当前消息内容
+        if images and len(images) > 0:
+            # 如果有图片，需要检查API是否支持多模态输入
+            # 某些API可能不支持多模态输入，我们可以选择发送文本+图片URL或只发送文本
+            if message:
+                # 将图片URL添加到文本消息中，而不是使用多模态格式
+                image_urls_text = "\n图片链接: " + "\n".join([f"[图片]({url})" for url in images])
+                combined_message = message + image_urls_text
+                current_message = {"role": "user", "content": combined_message}
+            else:
+                # 只有图片，没有文本
+                image_urls_text = "请查看以下图片: " + "\n".join([f"[图片]({url})" for url in images])
+                current_message = {"role": "user", "content": image_urls_text}
+        else:
+            # 普通文本消息
+            current_message = {"role": "user", "content": message}
+        
+        messages.append(current_message)
         
         # 如果有特定人格，添加人格提示
         if session and session.get("persona") and session["persona"] != "default":
@@ -949,7 +1047,7 @@ async def handle_commands(websocket, data, config_data):
                     else:
                         session = get_user_session(sender_id)
                     
-                    ai_response = await chat_with_ai(chat_content, api_key, api_url, model_name, session)
+                    ai_response = await chat_with_ai(chat_content, api_key, api_url, model_name, session, None)
                     if ai_response:
                         # 更新会话历史
                         update_session_history(session, chat_content, ai_response)
@@ -1012,7 +1110,6 @@ async def handle_commands(websocket, data, config_data):
         help_text += "/persona - 显示当前人格\n"
         help_text += "/persona ls - 列出所有人格\n"
         help_text += "/persona <序号/名称> - 切换人格（切换时自动清除对话历史）\n"
-        help_text += "/clear - 清除当前对话历史\n"
         
         if is_authorized(user_id, 3, config_data):  # 主人权限
             help_text += "/reset - 重载插件、自动回复、戳一戳等配置\n"
@@ -1065,6 +1162,17 @@ async def handle_commands(websocket, data, config_data):
             await send_message(websocket, "权限不足", group_id=group_id, user_id=user_id if not group_id else None)
             return True
             
+        # 在重载前保存当前的人格设置
+        # 保存用户会话的人格设置
+        for user_id_key, session_data in user_sessions.items():
+            if "persona" in session_data:
+                save_persona_to_config(user_id=user_id_key, persona_name=session_data["persona"])
+        
+        # 保存群会话的人格设置
+        for group_id_key, session_data in group_sessions.items():
+            if "persona" in session_data:
+                save_persona_to_config(group_id=group_id_key, persona_name=session_data["persona"])
+        
         # 重载插件
         load_plugins()
         # 重载自动回复规则
@@ -1166,47 +1274,107 @@ async def handle_commands(websocket, data, config_data):
         if not args:
             # 如果没有参数，列出人格
             available = "\n".join([f"{i+1}. {persona}" for i, persona in enumerate(personas)])
-            response = f"可用人格:\n{available}\n当前人格: {get_user_session(user_id).get('persona', 'default')}\n使用 /persona <序号/名称> 切换人格\n使用 /clear 清除当前对话历史"
+            # 根据消息类型显示相应的人格
+            if group_id:
+                current_persona = get_group_session(group_id).get('persona', 'default')
+            else:
+                current_persona = get_user_session(user_id).get('persona', 'default')
+            response = f"可用人格:\n{available}\n当前人格: {current_persona}\n使用 /persona <序号/名称> 切换人格"
             await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
             return True
         elif len(args) == 1 and args[0] == "ls":
             # 列出人格（与不加参数相同）
             available = "\n".join([f"{i+1}. {persona}" for i, persona in enumerate(personas)])
-            response = f"可用人格:\n{available}\n当前人格: {get_user_session(user_id).get('persona', 'default')}\n使用 /persona <序号/名称> 切换人格"
+            # 根据消息类型显示相应的人格
+            if group_id:
+                current_persona = get_group_session(group_id).get('persona', 'default')
+            else:
+                current_persona = get_user_session(user_id).get('persona', 'default')
+            response = f"可用人格:\n{available}\n当前人格: {current_persona}\n使用 /persona <序号/名称> 切换人格"
             await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
             return True
         elif len(args) == 1:
             # 尝试按序号或名称切换人格
             arg = args[0]
-            user_session = get_user_session(user_id)
             
-            # 检查是否为数字序号
-            if arg.isdigit():
-                index = int(arg) - 1
-                if 0 <= index < len(personas):
-                    selected_persona = personas[index]
-                    old_persona = user_session["persona"]
-                    user_session["persona"] = selected_persona
-                    # 切换人格时清除会话历史，避免人格混淆
-                    clear_session_history(user_session)
-                    await send_message(websocket, f"已切换到人格: {selected_persona}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
-                    log_platform_info(f"用户 {user_id} 从人格 {old_persona} 切换到人格: {selected_persona}，会话历史已清除")
+            # 如果在群聊中，优先设置群聊会话的人格
+            if group_id:
+                group_session = get_group_session(group_id)
+                old_persona = group_session["persona"]  # 记录群聊之前的人格
+                
+                # 检查是否为数字序号
+                if arg.isdigit():
+                    index = int(arg) - 1
+                    if 0 <= index < len(personas):
+                        selected_persona = personas[index]
+                        group_session["persona"] = selected_persona
+                        # 切换人格时清除会话历史，避免人格混淆
+                        clear_group_session_history(group_session)
+                        
+                        # 保存人格设置到配置文件
+                        save_persona_to_config(group_id=group_id, persona_name=selected_persona)
+                        
+                        await send_message(websocket, f"已切换到人格: {selected_persona}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
+                        log_platform_info(f"用户 {user_id} 在群 {group_id} 从人格 {old_persona} 切换到人格: {selected_persona}，会话历史已清除")
+                    else:
+                        response = f"序号超出范围。使用 /persona 查看可用序号。"
+                        await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
                 else:
-                    response = f"序号超出范围。使用 /persona 查看可用序号。"
-                    await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
+                    # 按名称切换
+                    if arg in personas:
+                        old_persona = group_session["persona"]  # 再次获取旧人格（因为可能在上面被修改了）
+                        group_session["persona"] = arg
+                        # 切换人格时清除会话历史，避免人格混淆
+                        clear_group_session_history(group_session)
+                        
+                        # 保存人格设置到配置文件
+                        save_persona_to_config(group_id=group_id, persona_name=arg)
+                        
+                        await send_message(websocket, f"已切换到人格: {arg}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
+                        log_platform_info(f"用户 {user_id} 在群 {group_id} 从人格 {old_persona} 切换到人格: {arg}，会话历史已清除")
+                    else:
+                        available = ", ".join(personas)
+                        response = f"人格不存在。可用人格: {available}\n使用 /persona 查看带序号的列表"
+                        await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
             else:
-                # 按名称切换
-                if arg in personas:
-                    old_persona = user_session["persona"]
-                    user_session["persona"] = arg
-                    # 切换人格时清除会话历史，避免人格混淆
-                    clear_session_history(user_session)
-                    await send_message(websocket, f"已切换到人格: {arg}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
-                    log_platform_info(f"用户 {user_id} 从人格 {old_persona} 切换到人格: {arg}，会话历史已清除")
+                # 在私聊中，设置用户会话的人格
+                user_session = get_user_session(user_id)
+                
+                # 检查是否为数字序号
+                if arg.isdigit():
+                    index = int(arg) - 1
+                    if 0 <= index < len(personas):
+                        selected_persona = personas[index]
+                        old_persona = user_session["persona"]
+                        user_session["persona"] = selected_persona
+                        # 切换人格时清除会话历史，避免人格混淆
+                        clear_session_history(user_session)
+                        
+                        # 保存人格设置到配置文件
+                        save_persona_to_config(user_id=user_id, persona_name=selected_persona)
+                        
+                        await send_message(websocket, f"已切换到人格: {selected_persona}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
+                        log_platform_info(f"用户 {user_id} 从人格 {old_persona} 切换到人格: {selected_persona}，会话历史已清除")
+                    else:
+                        response = f"序号超出范围。使用 /persona 查看可用序号。"
+                        await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
                 else:
-                    available = ", ".join(personas)
-                    response = f"人格不存在。可用人格: {available}\n使用 /persona 查看带序号的列表"
-                    await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
+                    # 按名称切换
+                    if arg in personas:
+                        old_persona = user_session["persona"]
+                        user_session["persona"] = arg
+                        # 切换人格时清除会话历史，避免人格混淆
+                        clear_session_history(user_session)
+                        
+                        # 保存人格设置到配置文件
+                        save_persona_to_config(user_id=user_id, persona_name=arg)
+                        
+                        await send_message(websocket, f"已切换到人格: {arg}，对话历史已清除", group_id=group_id, user_id=user_id if not group_id else None)
+                        log_platform_info(f"用户 {user_id} 从人格 {old_persona} 切换到人格: {arg}，会话历史已清除")
+                    else:
+                        available = ", ".join(personas)
+                        response = f"人格不存在。可用人格: {available}\n使用 /persona 查看带序号的列表"
+                        await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
             return True
         else:
             await send_message(websocket, "参数错误。使用 /persona 查看帮助", group_id=group_id, user_id=user_id if not group_id else None)
@@ -1314,23 +1482,6 @@ async def handle_commands(websocket, data, config_data):
         await send_message(websocket, plugin_list, group_id=group_id, user_id=user_id if not group_id else None)
         return True
     
-    # 清除对话历史指令（所有用户可用）
-    elif command == "clear":
-        # 清除用户会话历史
-        user_session = get_user_session(user_id)
-        clear_session_history(user_session)
-        
-        # 如果是群聊，也清除群聊会话历史
-        if group_id:
-            group_session = get_group_session(group_id)
-            clear_group_session_history(group_session)
-            response = "✅ 对话历史已清除，可以开始新的对话了！"
-        else:
-            response = "✅ 私聊对话历史已清除，可以开始新的对话了！"
-        
-        await send_message(websocket, response, group_id=group_id, user_id=user_id if not group_id else None)
-        return True
-    
     # 未知指令
     else:
         await send_message(websocket, "未知指令，发送 /help 查看可用指令", group_id=group_id, user_id=user_id if not group_id else None)
@@ -1398,6 +1549,8 @@ def load_config():
             "max_download_workers": MAX_DOWNLOAD_WORKERS,
             "admins": [],  # 管理员列表
             "users": [],   # 用户列表
+            "saved_user_personas": {},  # 保存的用户人格设置
+            "saved_group_personas": {}, # 保存的群聊人格设置
             "patches": {
                 "enabled": []  # 补丁列表
             },
@@ -1422,6 +1575,27 @@ def load_config():
     # 加载自动回复规则和随机回复
     load_auto_reply_rules()
     load_random_replies()
+    
+    # 初始化时加载已保存的人格设置
+    # 从配置中获取保存的用户人格设置
+    saved_user_personas = config_data.get("saved_user_personas", {})
+    for user_id, persona_name in saved_user_personas.items():
+        # 初始化用户会话时使用保存的人格
+        if user_id not in user_sessions:
+            user_sessions[user_id] = {
+                "history": [],
+                "persona": persona_name
+            }
+    
+    # 从配置中获取保存的群聊人格设置
+    saved_group_personas = config_data.get("saved_group_personas", {})
+    for group_id, persona_name in saved_group_personas.items():
+        # 初始化群会话时使用保存的人格
+        if group_id not in group_sessions:
+            group_sessions[group_id] = {
+                "history": [],
+                "persona": persona_name
+            }
 
 # =========================
 # WebSocket 主处理
@@ -1950,8 +2124,22 @@ async def main():
         log_platform_info(f"WebSocket服务器启动失败: {e}")
         raise
 
+def save_all_personas_on_exit():
+    """程序退出时保存所有人格设置"""
+    # 保存用户会话的人格设置
+    for user_id_key, session_data in user_sessions.items():
+        if "persona" in session_data:
+            save_persona_to_config(user_id=user_id_key, persona_name=session_data["persona"])
+    
+    # 保存群会话的人格设置
+    for group_id_key, session_data in group_sessions.items():
+        if "persona" in session_data:
+            save_persona_to_config(group_id=group_id_key, persona_name=session_data["persona"])
+
 if __name__=="__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         log_platform_info("程序已退出")
+        # 退出前保存人格设置
+        save_all_personas_on_exit()
