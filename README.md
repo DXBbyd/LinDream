@@ -64,7 +64,11 @@ LinDream是一个基于Python开发的QQ机器人框架，采用WebSocket协议�
 ### 环境要求
 - Python 3.8+
 - OneBot协议兼容的QQ机器人平台
-
+### 方案一:一键脚本！使用一键脚本部署NapCat和LinDream
+```bash
+curl -L -o LinDreamInstall.sh https://raw.githubusercontent.com/DXBbyd/LinDreamInstall/main/LinDreamInstall.sh && bash LinDreamInstall.sh
+```
+### 方案二:git克隆部署
 ### 1. 克隆项目(默认使用镜像加速)
 ```bash
 git clone http://github.fufumc.top/https://github.com/DXBbyd/LinDream.git
