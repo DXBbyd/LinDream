@@ -85,13 +85,13 @@ source .venv/bin/activate
 ```bash
 uv pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple
 ```
-### 4.配置消息平台（NaoCat）
+### 4.配置消息平台（NapCat）
 详细安装方式请参见→napcat.wiki
 在WebUI中设置ws反向代理连接地址为ws://127.0.01:2048，不配置token。即可
 
 ### 5. 配置机器人
 应该是不需要手动创建的，因为首次启动会询问你的哦~
-创建 `config.json` 文件：
+(这个版本的配置文件已经是旧的了！首次启动会通过交互配置所以不需要看这个）创建 `config.json` 文件：
 ```json
 {
     "api_key": "your_ai_api_key",
