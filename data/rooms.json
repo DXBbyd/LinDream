@@ -1,0 +1,20 @@
+{
+  "rooms": {
+    "HHMQEC": {
+      "room_id": "HHMQEC",
+      "room_type": "private",
+      "name": "个人会话_3157037483",
+      "creator_id": "3157037483",
+      "created_at": "2026-01-18T08:30:14.375393",
+      "members": [
+        "3157037483"
+      ],
+      "is_active": true,
+      "persona": "砂狼白子"
+    }
+  },
+  "user_sessions": {
+    "3157037483": "HHMQEC"
+  },
+  "group_sessions": {}
+}

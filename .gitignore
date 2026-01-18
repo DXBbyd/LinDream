@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# iFlow CLI
+.iflow/
+
+# Data directories
+data/cache/
+data/logs/
+data/file/
+data/first-start/
+data/plugin_data/
+data/room_memories/
+file/
+
+# Runtime data
+*.json
+!data/rooms.json
+data/config/
+daka_data.json
+com.txt
+
+# Temporary files
+*.log
+*.tmp
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compressed files
+*.zip

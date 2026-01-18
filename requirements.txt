@@ -1,0 +1,6 @@
+websockets
+colorama
+httpx
+requests
+aiohttp
+aiohttp-cors
