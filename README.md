@@ -1,4 +1,4 @@
-# LinDream - 企业级QQ机器人框架
+# LinDream - 砖业的QQ机器人框架
 
 <div align="center">
 
@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Stable-success?style=for-the-badge)
 
-**一个功能完善、架构清晰、性能优越的企业级聊天机器人平台**
+**一个功能完善、架构清晰、性能优越的QQ机器人框架**
 
 [部署文档](https://RBfrom.havugu.cn/docs) · [插件仓库](https://github.com/DXBbyd/LinDream_plugin) · [问题反馈](https://github.com/DXBbyd/LinDream/issues)
 
@@ -17,7 +17,7 @@
 
 ## 📖 项目介绍
 
-LinDream 是一个基于 Python 开发的现代化 QQ 机器人框架，采用 WebSocket 协议与 OneBot 协议兼容的 QQ 机器人平台（如 NapCat、go-cqhttp）进行通信。V2.0.1 版本是一次全面的架构重构，从单文件应用转变为企业级的模块化系统，提供完整的会话管理、插件系统、AI 聊天、权限管理等核心功能。
+LinDream 是一个基于 Python 开发的现代化 QQ 机器人框架，采用 WebSocket 协议与 OneBot 协议兼容的 QQ 机器人平台（如 NapCat、go-cqhttp）进行通信。V2.0.1 版本是一次全面的架构重构，从单文件应用转变为砖家级的模块化系统，提供完整的会话管理、插件系统、AI 聊天、权限管理等核心功能。
 
 ### ✨ 核心特性
 
@@ -332,7 +332,6 @@ LinDream/
 ## 📞 联系方式
 
 - **作者**：软白from
-- **B站**：[软白from](https://space.bilibili.com/)
 - **GitHub**：[DXBbyd](https://github.com/DXBbyd)
 - **文档网站**：[https://RBfrom.havugu.cn/docs](https://RBfrom.havugu.cn/docs)
 
