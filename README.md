@@ -9,7 +9,7 @@
 
 **一个功能完善、架构清晰、性能优越的QQ机器人框架**
 
-[部署文档](https://RBfrom.havugu.cn/docs) · [插件仓库](https://github.com/DXBbyd/LinDream_plugin) · [问题反馈](https://github.com/DXBbyd/LinDream/issues)
+[部署文档，容易爆炸！](https://RBfrom.havugu.cn/docs) · [问题反馈](https://github.com/DXBbyd/LinDream/issues)
 
 </div>
 
@@ -40,8 +40,12 @@ LinDream 是一个基于 Python 开发的现代化 QQ 机器人框架，采用 W
 
 详细的部署教程、配置说明、插件开发指南请访问：
 
-📖 **[完整部署文档](https://RBfrom.havugu.cn/docs)**
-
+📖 **[完整部署文档，但是容易爆炸](https://RBfrom.havugu.cn/docs)**
+这边建议查看项目目录下docs中的部署文档
+[在安卓上部署](https://github.com/DXBbyd/LinDream/docs/android.md)
+[在linux上部署](https://github.com/DXBbyd/LinDream/docs/linux.md)
+[在Windows上部署](https://github.com/DXBbyd/LinDream/docs/windows.md)
+[杂七杂八的配置文件](https://github.com/DXBbyd/LinDream/docs/configuration.md)
 ---
 
 ## 📁 项目结构
