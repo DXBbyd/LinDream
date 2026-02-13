@@ -269,6 +269,25 @@ class ConfigGenerator:
         
         print(f"✓ 安全哈希配置文件已保存: {security_config_file}")
     
+    def create_admin_file(self):
+        """创建管理员列表文件"""
+        admin_dir = os.path.join("data", "other")
+        os.makedirs(admin_dir, exist_ok=True)
+        admin_file = os.path.join(admin_dir, "admin.txt")
+        
+        # 检查是否有管理员配置
+        owners = self.config_data.get("owners", [])
+        if owners:
+            with open(admin_file, 'w', encoding='utf-8') as f:
+                for owner in owners:
+                    f.write(f"{owner}\n")
+        else:
+            # 创建空文件
+            with open(admin_file, 'w', encoding='utf-8') as f:
+                f.write("")
+        
+        print(f"✓ 管理员文件已保存: {admin_file}")
+    
     def complete_missing_config(self, config_path: str, missing_keys: list):
         """补全缺少的配置项"""
         # 读取现有配置
@@ -352,6 +371,12 @@ class ConfigGenerator:
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         
+        # 更新实例的配置数据
+        self.config_data = config
+        
+        # 创建或更新admin.txt文件
+        self.create_admin_file()
+        
         print("\n" + "="*60)
         print("配置补全完成！")
         print("="*60)
@@ -381,6 +406,7 @@ class ConfigGenerator:
         self.create_log_config()
         self.create_runtime_status_config()
         self.create_security_hash_config()
+        self.create_admin_file()  # 添加这行来创建admin.txt文件
         
         # 显示总结
         print("\n" + "="*60)
@@ -392,6 +418,7 @@ class ConfigGenerator:
         print(f"  - {os.path.join(self.config_dir, 'log.json')}")
         print(f"  - {os.path.join(self.config_dir, 'runtime_status.json')}")
         print(f"  - {os.path.join(self.config_dir, 'security_hash.json')}")
+        print(f"  - data/other/admin.txt")
         print("\n下一步:")
         print("  1. 检查并修改配置文件中的API密钥等敏感信息")
         print("  2. 运行 'python main.py' 启动机器人")
