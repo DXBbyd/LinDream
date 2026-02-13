@@ -41,11 +41,12 @@ LinDream 是一个基于 Python 开发的现代化 QQ 机器人框架，采用 W
 详细的部署教程、配置说明、插件开发指南请访问：
 
 📖 **[完整部署文档，但是容易爆炸](https://RBfrom.havugu.cn/docs)**
-这边建议查看项目目录下docs中的部署文档
-[在安卓上部署](https://github.com/DXBbyd/LinDream/docs/android.md)
-[在linux上部署](https://github.com/DXBbyd/LinDream/docs/linux.md)
-[在Windows上部署](https://github.com/DXBbyd/LinDream/docs/windows.md)
-[杂七杂八的配置文件](https://github.com/DXBbyd/LinDream/docs/configuration.md)
+
+### 这边建议查看项目目录下docs中的部署文档
+###[在安卓上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/android.md)
+###[在linux上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/linux.md)
+###[在Windows上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/windows.md)
+###[杂七杂八的配置文件](https://github.com/DXBbyd/LinDream/blob/main/docs/configuration.md)
 ---
 
 ## 📁 项目结构
@@ -136,6 +137,8 @@ LinDream/
 - **记忆隔离**：不同人格的记忆完全独立
 - **人格持久化**：重启后自动恢复人格配置
 
+### 插件开发
+- **本项目的插件开发**: 请查看[插件系统文档](https://github.com/DXBbyd/LinDream/blob/main/docs/plugin.md)
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件

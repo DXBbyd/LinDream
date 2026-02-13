@@ -137,17 +137,11 @@ LinDream/
 - **记忆隔离**：不同人格的记忆完全独立
 - **人格持久化**：重启后自动恢复人格配置
 
+### 插件开发
+- **本项目的插件开发**: 请查看[插件系统文档](https://github.com/DXBbyd/LinDream/blob/main/docs/plugin.md)
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
----
-
-## 📞 联系方式
-
-- **作者**：软白from
-- **GitHub**：[DXBbyd](https://github.com/DXBbyd)
-- **文档网站**：[https://RBfrom.havugu.cn/docs](https://RBfrom.havugu.cn/docs)
 
 ---
 
