@@ -42,11 +42,11 @@ LinDream 是一个基于 Python 开发的现代化 QQ 机器人框架，采用 W
 
 📖 **[完整部署文档，但是容易爆炸](https://RBfrom.havugu.cn/docs)**
 
-### 这边建议查看项目目录下docs中的部署文档
-###[在安卓上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/android.md)
-###[在linux上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/linux.md)
-###[在Windows上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/windows.md)
-###[杂七杂八的配置文件](https://github.com/DXBbyd/LinDream/blob/main/docs/configuration.md)
+## 这边建议查看项目目录下docs中的部署文档
+### [在安卓上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/android.md)
+### [在linux上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/linux.md)
+### [在Windows上部署](https://github.com/DXBbyd/LinDream/blob/main/docs/windows.md)
+### [杂七杂八的配置文件](https://github.com/DXBbyd/LinDream/blob/main/docs/configuration.md)
 ---
 
 ## 📁 项目结构
