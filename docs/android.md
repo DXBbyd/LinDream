@@ -84,5 +84,6 @@ uv run main.py
 ```
 ## 恭喜你已经成功启动了项目，请移步至部署NapCat↓
 ### [napcat](https://napcat.napneko.icu/guide/boot/Shell)
+## 如部署好了NapCat请移步至杂七杂八的文件配置
 ## 什么？你看不懂嘛？有手把手的教学视频！
 ### [BiliBili](https://www.bilibili.com/video/BV1AHcjzTEwJ/?pop_share=1&spm_id_from=333.40164.0.0&vd_source=0173196d7a2e4755e213b47359712524)
